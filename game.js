@@ -21,7 +21,11 @@ const CONFIG = {
   FUNNY_MAX: 60,        // scans funnyhorn1 ... funnyhorn60
   LOOP_FUNNY: false,    // true = funny music keeps looping until you press again
   VOL_HORN: 1.0,
-  VOL_FUNNY: 0.9
+  VOL_FUNNY: 0.9,
+  // music that plays after a crash while the crowd comes (put crashmusic.mp3 in the same folder)
+  CRASH_NAMES: ['crashmusic', 'crash', 'gameover', 'game over', 'crash music', 'crash_music', 'game_over', 'Crash', 'GameOver', 'Game Over'],
+  VOL_CRASH: 0.9,
+  LOOP_CRASH: true
 };
 
 /* ===================== basics ===================== */
@@ -61,19 +65,20 @@ function saveBest(v) { try { localStorage.setItem(LS_KEY, String(v)); } catch (e
 
 /* ===================== areas (shown in GPS bar) ===================== */
 const AREAS = [
-  { name: 'Jirat Bazar',      ground: '#b9b19f', small: ['shop', 'shop', 'shop', 'grocery', 'tea', 'house'],            big: ['mall'],          bigP: .20 },
-  { name: 'Post Office Road', ground: '#a9b48c', small: ['house', 'shop', 'postoffice', 'tree', 'house', 'shop'],        big: ['school'],        bigP: .22 },
+  { name: 'Post Office Road',      ground: '#b9b19f', small: ['shop', 'shop', 'shop', 'grocery', 'tea', 'house'],            big: ['mall'],          bigP: .20 },
+  { name: 'Huttala ', ground: '#a9b48c', small: ['house', 'shop', 'postoffice', 'tree', 'house', 'shop'],        big: ['school'],        bigP: .22 },
   { name: '60 Feet Road',     ground: '#b3ae9a', small: ['shop', 'grocery', 'house', 'shop', 'tree', 'grocery'],         big: ['mall', 'school'], bigP: .30 },
-  { name: 'Huttala',          ground: '#9fb386', small: ['banyan', 'tree', 'tea', 'shop', 'house', 'temple'],            big: ['school'],        bigP: .10 },
-  { name: 'Nagpara',          ground: '#97b27c', small: ['house', 'house', 'pond', 'tree', 'grocery', 'house'],          big: ['school'],        bigP: .12 },
+  { name: 'Nag Para',          ground: '#9fb386', small: ['banyan', 'tree', 'tea', 'shop', 'house', 'temple'],            big: ['school'],        bigP: .10 },
+  { name: 'Jirat Bazar',          ground: '#97b27c', small: ['house', 'house', 'pond', 'tree', 'grocery', 'house'],          big: ['school'],        bigP: .12 },
   { name: 'Das Para',         ground: '#a2b183', small: ['house', 'temple', 'house', 'tree', 'shop', 'house'],           big: ['school'],        bigP: .14 },
   { name: 'Neplar Math',      ground: '#8fb56e', small: ['tree', 'house', 'pond', 'field', 'tree', 'field'],             big: ['field', 'field', 'school'], bigP: .35 }
+
 ];
 const areaAt = z => AREAS[mod(Math.floor(z / SEG_LEN), AREAS.length)];
 
 /* ===================== sound ===================== */
 const SFX = {
-  ctx: null, muted: false, hornUrl: null, funny: [], funnyAudio: null, lastFunny: -1,
+  ctx: null, muted: false, hornUrl: null, crashUrl: null, crashAudio: null, funny: [], funnyAudio: null, lastFunny: -1,
   exts: CONFIG.AUDIO_EXTS.slice(),
   ac() {
     if (!this.ctx) { const C = window.AudioContext || window.webkitAudioContext; if (C) { try { this.ctx = new C(); } catch (e) {} } }
@@ -118,12 +123,15 @@ const SFX = {
     const horns = files.filter(f => /^horn/i.test(f.name)).sort((a, b) => num(a.name) - num(b.name));
     funny.forEach((f, i) => this.funny.push({ n: num(f.name) === 9999 ? i + 1 : num(f.name), url: f.name }));
     if (horns.length) this.hornUrl = horns[0].name;
+    const cr = files.filter(f => /^(crash|game[ _-]?over)/i.test(f.name));
+    if (cr.length) this.crashUrl = cr[0].name;
     return funny.length > 0 || horns.length > 0;
   },
   async discover() {
     try {
       try { if (await this.listRepo()) { this.finishDiscover(); return; } } catch (e) {}
       for (const b of CONFIG.HORN_NAMES) { const u = await this.findAny(b); if (u) { this.hornUrl = u; break; } }
+      for (const b of CONFIG.CRASH_NAMES) { const u = await this.findAny(b); if (u) { this.crashUrl = u; break; } }
       let pat = null;
       for (const p of CONFIG.FUNNY_PATTERNS) {
         for (const n of [1, 2]) { if (await this.findAny(p(n))) { pat = p; break; } }
@@ -142,7 +150,7 @@ const SFX = {
   finishDiscover() {
     if (el.dbg && /debug/.test(location.search)) {
       el.dbg.classList.remove('hidden');
-      el.dbg.textContent = 'Horn: ' + (this.hornUrl || 'not found (using built-in beep)') + ' | Funny horns found: ' + this.funny.length;
+      el.dbg.textContent = 'Horn: ' + (this.hornUrl || 'not found (using built-in beep)') + ' | Funny horns found: ' + this.funny.length + ' | Crash music: ' + (this.crashUrl || 'built-in jingle');
     }
   },
   play(url, vol, loop, onFail) {
@@ -172,7 +180,17 @@ const SFX = {
   },
   stopFunny() { if (this.funnyAudio) { try { this.funnyAudio.pause(); } catch (e) {} this.funnyAudio = null; } },
   funnyPlaying() { const a = this.funnyAudio; return !!(a && !a.paused && !a.ended); },
-  setMuted(m) { this.muted = m; if (m) this.stopFunny(); },
+  crashMusic() {
+    if (this.muted) return;
+    if (this.crashUrl) this.crashAudio = this.play(this.crashUrl, CONFIG.VOL_CRASH, CONFIG.LOOP_CRASH, () => this.synthCrash());
+    else this.synthCrash();
+  },
+  stopCrash() { if (this.crashAudio) { try { this.crashAudio.pause(); } catch (e) {} this.crashAudio = null; } },
+  synthCrash() {
+    const mel = [392, 392, 440, 392, 523, 494, 392, 392, 440, 392, 587, 523];
+    for (let r = 0; r < 2; r++) mel.forEach((f, i) => { this.tone('square', f, f, .4 + (r * 12 + i) * .2, .16, .08); if (i % 2 === 0) this.tone('triangle', 98, 98, .4 + (r * 12 + i) * .2, .15, .2); });
+  },
+  setMuted(m) { this.muted = m; if (m) { this.stopFunny(); this.stopCrash(); } },
   tone(type, f0, f1, t0, dur, vol) {
     const c = this.ac(); if (!c) return;
     const o = c.createOscillator(), g = c.createGain(), t = c.currentTime + t0;
@@ -398,7 +416,7 @@ function drawPair(pi, side, area) {
 /* ===================== game state ===================== */
 let mode = 'menu';             // menu | play | crash | over | paused
 let best = loadBest(), newBest = false, finalScore = 0, crashedRoad = '';
-let p, vehicles = [], particles = [], floaters = [];
+let p, vehicles = [], particles = [], floaters = [], crowd = [], smokeT = 0;
 let camZ = 0, maxZ = 0, shake = 0, flash = 0, crashT = 0, spawnT = 1.4, partyT = 0, tAcc = 0, lastSeg = null;
 let shownScore = -1, shownSpeed = -1, vig = null, last = 0;
 const input = { left: false, right: false, fwd: false, back: false };
@@ -408,7 +426,7 @@ const difficulty = () => clamp(maxZ / 25000, 0, 1);
 
 function reset() {
   p = { x: LANE_X[1], z: 0, speed: 0, vx: 0, w: 36, h: 66, tilt: 0, braking: false };
-  vehicles = []; particles = []; floaters = [];
+  vehicles = []; particles = []; floaters = []; crowd = []; smokeT = 0;
   camZ = 0; maxZ = 0; shake = 0; flash = 0; crashT = 0; spawnT = 1.4; partyT = 0; lastSeg = null;
   shownScore = -1; shownSpeed = -1;
   for (let z = 380; z <= PLAYER_SY + 120; z += 170) {
@@ -474,7 +492,9 @@ function update(dt, demo) {
     stepParticles(dt);
     p.z += p.speed * dt; p.speed *= Math.max(0, 1 - 3 * dt);
     for (const v of vehicles) { v.z += v.dir * v.speed * dt; v.speed *= Math.max(0, 1 - 2.2 * dt); }
-    if (crashT > 1.0) gameOver();
+    stepCrowd(dt); smokeCar(dt);
+    if (crashT > .7 && !crowd.length) spawnCrowd();
+    if (crashT > 4.4) gameOver();
     return;
   }
   const d = difficulty(), maxV = 280 + 70 * d;
@@ -540,10 +560,50 @@ function update(dt, demo) {
   updateGPS(false); updateHUD();
 }
 
+const SKINS = ['#e0ac84', '#c68642', '#8d5524', '#f1c27d'];
+function spawnCrowd() {
+  const n = 12;
+  for (let i = 0; i < n; i++) {
+    const left = i % 2 === 0, t = (Math.floor(i / 2) + .5) / (n / 2);
+    const a = left ? Math.PI / 2 + t * Math.PI : -Math.PI / 2 + t * Math.PI;
+    crowd.push({
+      x: left ? -20 - Math.random() * 50 : W + 20 + Math.random() * 50, z: p.z + (Math.random() - .5) * 280,
+      tx: p.x + Math.cos(a) * (p.w / 2 + 13), tz: p.z + Math.sin(a) * (p.h / 2 + 12),
+      speed: 150 + Math.random() * 70, phase: Math.random() * 6, state: 'run', face: 0, hitT: Math.random() * .3,
+      shirt: SHIRTS[(Math.random() * SHIRTS.length) | 0], skin: SKINS[(Math.random() * SKINS.length) | 0]
+    });
+  }
+}
+function hitFx(c) {
+  if (mode === 'crash') shake = Math.max(shake, 3);
+  const words = ['POW!', 'BAM!', 'WHAM!', 'BONK!', 'THWACK!', 'OOF!'], cols = ['#ffd166', '#ff5d8f', '#7be0ff', '#ff9f1c'];
+  floaters.push({ type: 'text', text: words[(Math.random() * words.length) | 0], x: (c.x - p.x) * .8, y: (p.z - c.z) * .8 - 10, vy: -34, life: .6, max: .6, size: 14 + Math.random() * 5, color: cols[(Math.random() * cols.length) | 0] });
+  if (Math.random() < .2) floaters.push({ type: 'text', text: '\uD83D\uDE21', x: c.x - p.x, y: (p.z - c.z) - 22, vy: -30, life: .9, max: .9, size: 20 });
+  for (let i = 0; i < 3; i++) particles.push({ x: (p.x + c.x) / 2, z: (p.z + c.z) / 2, vx: (Math.random() - .5) * 140, vz: (Math.random() - .5) * 140, life: .4, max: .4, size: 3, kind: 'spark', color: '#ffd166' });
+}
+function stepCrowd(dt) {
+  for (const c of crowd) {
+    c.phase += dt * (c.state === 'run' ? 16 : 22);
+    if (c.state === 'run') {
+      const dx = c.tx - c.x, dz = c.tz - c.z, d = Math.hypot(dx, dz);
+      c.face = Math.atan2(dx, dz);
+      if (d < 4) c.state = 'hit';
+      else { const m = Math.min(d, c.speed * dt); c.x += dx / d * m; c.z += dz / d * m; }
+    } else {
+      c.face = Math.atan2(p.x - c.x, p.z - c.z);
+      c.hitT -= dt;
+      if (c.hitT <= 0) { c.hitT = .28 + Math.random() * .3; hitFx(c); }
+    }
+  }
+}
+function smokeCar(dt) {
+  smokeT -= dt;
+  if (smokeT <= 0) { smokeT = .07; particles.push({ x: p.x + (Math.random() - .5) * 14, z: p.z + p.h / 2 - 2, vx: (Math.random() - .5) * 14, vz: 22 + Math.random() * 20, life: 1.1, max: 1.1, size: 5, kind: 'smoke', color: '#555' }); }
+}
 function crash(v) {
   mode = 'crash'; crashT = 0; shake = 12; flash = .55;
   burst((p.x + v.x) / 2, (p.z + v.z) / 2, 46);
-  SFX.crash();
+  SFX.crash(); SFX.stopFunny(); SFX.crashMusic(); partyT = 0;
   p.speed *= .25; p.vx = 0; p.braking = false;
   for (const k in input) input[k] = false;
   document.querySelectorAll('.cb.on').forEach(b => b.classList.remove('on'));
@@ -713,7 +773,35 @@ function drawVehicle(v) {
   ctx.restore();
 }
 
+function drawPerson(c) {
+  const y = scr(c.z);
+  if (y < -40 || y > H + 40) return;
+  ctx.save(); ctx.translate(c.x, y); ctx.rotate(c.face);
+  const s = Math.sin(c.phase), hit = c.state === 'hit';
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(2, 3, 8, 5, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#2b2f3a';
+  if (!hit) { ctx.beginPath(); ctx.ellipse(-2.5, s * 4, 2, 3.5, 0, 0, 7); ctx.fill(); ctx.beginPath(); ctx.ellipse(2.5, -s * 4, 2, 3.5, 0, 0, 7); ctx.fill(); }
+  else { ctx.beginPath(); ctx.ellipse(-3, 3, 2.2, 3.5, 0, 0, 7); ctx.fill(); ctx.beginPath(); ctx.ellipse(3, 3, 2.2, 3.5, 0, 0, 7); ctx.fill(); }
+  ctx.strokeStyle = c.skin; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+  ctx.beginPath();
+  if (hit) {
+    ctx.moveTo(-6, -1); ctx.lineTo(-3 + s * 2, -11 + Math.sin(c.phase * 1.3) * 4);
+    ctx.moveTo(6, -1); ctx.lineTo(3 - s * 2, -11 - Math.sin(c.phase * 1.3) * 4);
+  } else {
+    ctx.moveTo(-6, 0); ctx.lineTo(-7, -s * 5); ctx.moveTo(6, 0); ctx.lineTo(7, s * 5);
+  }
+  ctx.stroke();
+  ctx.fillStyle = c.shirt; ctx.beginPath(); ctx.ellipse(0, 0, 7, 4.6, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#1b1b1b'; ctx.beginPath(); ctx.arc(0, 1, 3.9, 0, 7); ctx.fill();
+  ctx.fillStyle = c.skin; ctx.beginPath(); ctx.arc(0, -.6, 3.4, 0, 7); ctx.fill();
+  ctx.restore();
+}
 function drawEffects() {
+  if (crowd.length) {
+    const py0 = scr(p.z);
+    ctx.fillStyle = '#ffd166'; ctx.font = '700 16px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (let i = 0; i < 3; i++) { const a = tAcc * 4 + i * 2.09; ctx.fillText('\u2605', p.x + Math.cos(a) * 20, py0 + Math.sin(a) * 9); }
+  }
   for (const t of particles) {
     const a = clamp(t.life / t.max, 0, 1), y = scr(t.z);
     if (t.kind === 'spark') { ctx.globalAlpha = a; ctx.fillStyle = t.color; ctx.fillRect(t.x - t.size / 2, y - t.size / 2, t.size, t.size); }
@@ -745,6 +833,7 @@ function draw() {
   drawRoad(); drawSides(); drawPoleBases();
   for (const v of vehicles) drawVehicle(v);
   drawVehicle({ type: 'player', x: p.x, z: p.z, w: p.w, h: p.h, dir: 1, color: '#ff2e63', braking: p.braking, tilt: p.tilt });
+  for (const c of crowd) drawPerson(c);
   drawEffects();
   drawStreetLights();
   ctx.restore();
@@ -756,7 +845,7 @@ function draw() {
 /* ===================== flow ===================== */
 function startGame() {
   if (mode === 'play' || mode === 'crash') return;
-  SFX.ac(); SFX.stopFunny();
+  SFX.ac(); SFX.stopFunny(); SFX.stopCrash();
   reset(); mode = 'play';
   el.start.classList.add('hidden'); el.over.classList.add('hidden'); el.pause.classList.add('hidden');
   el.hint.classList.add('show');
@@ -812,6 +901,7 @@ function bindTap(id, fn) {
 }
 bindHold('#bL', 'left'); bindHold('#bR', 'right'); bindHold('#bF', 'fwd'); bindHold('#bB', 'back');
 bindTap('#bH', doHorn); bindTap('#bFH', doFunny);
+cv.addEventListener('pointerdown', () => { if (mode === 'crash' && crashT > 1.5) gameOver(); });
 $('#btnStart').addEventListener('click', startGame);
 $('#btnAgain').addEventListener('click', startGame);
 $('#btnResume').addEventListener('click', togglePause);
@@ -855,6 +945,7 @@ function frame(ts) {
   const dt = Math.min(.05, (ts - last) / 1000 || 0); last = ts; tAcc += dt;
   if (mode === 'play' || mode === 'crash') update(dt, false);
   else if (mode === 'menu') update(dt, true);
+  else if (mode === 'over') { stepParticles(dt); stepCrowd(dt); smokeCar(dt); shake = 0; flash = 0; }
   draw();
   requestAnimationFrame(frame);
 }
