@@ -66,16 +66,14 @@ function saveBest(v) { try { localStorage.setItem(LS_KEY, String(v)); } catch (e
 
 /* ===================== areas (shown in GPS bar) ===================== */
 const AREAS = [
-  { name: 'Post Office Road',      ground: '#b9b19f', small: ['shop', 'shop', 'shop', 'grocery', 'tea', 'house'],            big: ['mall'],          bigP: .20 },
+ { name: 'Post Office Road',      ground: '#b9b19f', small: ['shop', 'shop', 'shop', 'grocery', 'tea', 'house'],            big: ['mall'],          bigP: .20 },
   { name: ' Huttala', ground: '#a9b48c', small: ['house', 'shop', 'postoffice', 'tree', 'house', 'shop'],        big: ['school'],        bigP: .22 },
   { name: '60 Feet Road',     ground: '#b3ae9a', small: ['shop', 'grocery', 'house', 'shop', 'tree', 'grocery'],         big: ['mall', 'school'], bigP: .30 },
   { name: 'Jirat Bazar',          ground: '#9fb386', small: ['banyan', 'tree', 'tea', 'shop', 'house', 'temple'],            big: ['school'],        bigP: .10 },
   { name: 'Nagpara',          ground: '#97b27c', small: ['house', 'house', 'pond', 'tree', 'grocery', 'house'],          big: ['school'],        bigP: .12 },
   { name: 'Das Para',         ground: '#a2b183', small: ['house', 'temple', 'house', 'tree', 'shop', 'house'],           big: ['school'],        bigP: .14 },
   { name: 'Neplar Math',      ground: '#8fb56e', small: ['tree', 'house', 'pond', 'field', 'tree', 'field'],             big: ['field', 'field', 'school'], bigP: .35 }
-   
 ];
-
 const areaAt = z => AREAS[mod(Math.floor(z / SEG_LEN), AREAS.length)];
 
 /* ===================== sound ===================== */
@@ -515,8 +513,8 @@ function update(dt, demo) {
     else { if (p.speed > 0) p.speed = Math.max(0, p.speed - 55 * dt); else if (p.speed < 0) p.speed = Math.min(0, p.speed + 130 * dt); }
     p.braking = back && p.speed > 1;
     const dirIn = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-    const eff = .45 + .55 * clamp(Math.abs(p.speed) / 150, 0, 1);
-    p.vx += (dirIn * 230 * eff - p.vx) * Math.min(1, 11 * dt);
+    const eff = .7 + .3 * clamp(Math.abs(p.speed) / 150, 0, 1);
+    p.vx += (dirIn * 230 * eff - p.vx) * Math.min(1, 14 * dt);
     p.x += p.vx * dt;
     const minX = ROAD_L + p.w / 2 + 2, maxX = ROAD_R - p.w / 2 - 2;
     if (p.x < minX || p.x > maxX) {
@@ -614,8 +612,7 @@ function crash(v) {
   burst((p.x + v.x) / 2, (p.z + v.z) / 2, 46);
   SFX.crash(); SFX.stopFunny(); SFX.crashMusic(); partyT = 0;
   p.speed *= .25; p.vx = 0; p.braking = false;
-  for (const k in input) input[k] = false;
-  document.querySelectorAll('.cb.on').forEach(b => b.classList.remove('on'));
+  releaseAll();
   el.hint.classList.remove('show');
   finalScore = Math.floor(maxZ / 10);
   newBest = finalScore > best;
@@ -862,8 +859,7 @@ function startGame() {
 function togglePause() {
   if (mode === 'play') {
     mode = 'paused'; el.pause.classList.remove('hidden');
-    for (const k in input) input[k] = false;
-    document.querySelectorAll('.cb.on').forEach(b => b.classList.remove('on'));
+    releaseAll();
     if (SFX.funnyAudio) { try { SFX.funnyAudio.pause(); } catch (e) {} }
   } else if (mode === 'paused') {
     mode = 'play'; el.pause.classList.add('hidden'); last = performance.now();
@@ -908,7 +904,40 @@ function bindTap(id, fn) {
   b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off); b.addEventListener('pointerleave', off);
   b.addEventListener('contextmenu', e => e.preventDefault());
 }
-bindHold('#bL', 'left'); bindHold('#bR', 'right'); bindHold('#bF', 'fwd'); bindHold('#bB', 'back');
+// Touch steering: a finger can slide from one button to another (e.g. left -> right) and the car follows the finger.
+const HOLD = { left: $('#bL'), right: $('#bR'), fwd: $('#bF'), back: $('#bB') };
+const kbd = { left: false, right: false, fwd: false, back: false };
+const touches = new Map();
+function refreshInput() {
+  const t = { left: false, right: false, fwd: false, back: false };
+  touches.forEach(k => { if (k) t[k] = true; });
+  for (const k in input) { input[k] = !!(kbd[k] || t[k]); HOLD[k].classList.toggle('on', input[k]); }
+}
+function releaseAll() { touches.clear(); for (const k in kbd) kbd[k] = false; refreshInput(); }
+function hitKey(x, y) {
+  let best = null, bd = 1e9;
+  for (const k in HOLD) {
+    const r = HOLD[k].getBoundingClientRect(), m = 10;
+    if (x >= r.left - m && x <= r.right + m && y >= r.top - m && y <= r.bottom + m) {
+      const d = Math.hypot(x - (r.left + r.right) / 2, y - (r.top + r.bottom) / 2);
+      if (d < bd) { bd = d; best = k; }
+    }
+  }
+  return best;
+}
+game.addEventListener('pointerdown', e => {
+  const k = hitKey(e.clientX, e.clientY);
+  if (k) { e.preventDefault(); touches.set(e.pointerId, k); refreshInput(); }
+});
+window.addEventListener('pointermove', e => {
+  if (!touches.has(e.pointerId)) return;
+  const k = hitKey(e.clientX, e.clientY);
+  if (touches.get(e.pointerId) !== k) { touches.set(e.pointerId, k); refreshInput(); }
+});
+const endTouch = e => { if (touches.delete(e.pointerId)) refreshInput(); };
+window.addEventListener('pointerup', endTouch);
+window.addEventListener('pointercancel', endTouch);
+Object.values(HOLD).forEach(b => b.addEventListener('contextmenu', e => e.preventDefault()));
 bindTap('#bH', doHorn); bindTap('#bFH', doFunny);
 cv.addEventListener('pointerdown', () => { if (mode === 'crash' && crashT > 1.5) gameOver(); });
 $('#btnStart').addEventListener('click', startGame);
@@ -919,18 +948,18 @@ el.mute.addEventListener('click', toggleMute);
 
 const KEYMAP = { ArrowUp: 'fwd', KeyW: 'fwd', ArrowDown: 'back', KeyS: 'back', ArrowLeft: 'left', ArrowRight: 'right', KeyA: 'left', KeyD: 'right' };
 const KEYBTN = { fwd: '#bF', back: '#bB', left: '#bL', right: '#bR' };
-function setBtn(k, on) { const b = $(KEYBTN[k]); if (b) b.classList.toggle('on', on); }
+
 window.addEventListener('keydown', e => {
   const k = KEYMAP[e.code];
-  if (k) { input[k] = true; setBtn(k, true); e.preventDefault(); return; }
+  if (k) { kbd[k] = true; refreshInput(); e.preventDefault(); return; }
   if (e.repeat) return;
   if (e.code === 'Enter') { e.preventDefault(); if (mode === 'menu' || mode === 'over') startGame(); else if (mode === 'paused') togglePause(); }
   else if (e.code === 'KeyH' || e.code === 'Space') { e.preventDefault(); if (mode === 'menu' || mode === 'over') startGame(); else doHorn(); }
   else if (e.code === 'KeyF' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') { e.preventDefault(); doFunny(); }
   else if (e.code === 'KeyP' || e.code === 'Escape') { e.preventDefault(); togglePause(); }
 });
-window.addEventListener('keyup', e => { const k = KEYMAP[e.code]; if (k) { input[k] = false; setBtn(k, false); } });
-window.addEventListener('blur', () => { for (const k in input) input[k] = false; });
+window.addEventListener('keyup', e => { const k = KEYMAP[e.code]; if (k) { kbd[k] = false; refreshInput(); } });
+window.addEventListener('blur', releaseAll);
 document.addEventListener('visibilitychange', () => { if (document.hidden && mode === 'play') togglePause(); });
 document.addEventListener('contextmenu', e => e.preventDefault());
 
