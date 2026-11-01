@@ -18,6 +18,7 @@ const CONFIG = {
     n => 'FunnyHorn' + n,
     n => 'Funny horn ' + n
   ],
+  FUNNY_ORDER: 'serial', // 'serial' = 1,2,3... one by one on every tap | 'random'
   FUNNY_MAX: 60,        // scans funnyhorn1 ... funnyhorn60
   LOOP_FUNNY: false,    // true = funny music keeps looping until you press again
   VOL_HORN: 1.0,
@@ -66,14 +67,15 @@ function saveBest(v) { try { localStorage.setItem(LS_KEY, String(v)); } catch (e
 /* ===================== areas (shown in GPS bar) ===================== */
 const AREAS = [
   { name: 'Post Office Road',      ground: '#b9b19f', small: ['shop', 'shop', 'shop', 'grocery', 'tea', 'house'],            big: ['mall'],          bigP: .20 },
-  { name: 'Huttala ', ground: '#a9b48c', small: ['house', 'shop', 'postoffice', 'tree', 'house', 'shop'],        big: ['school'],        bigP: .22 },
+  { name: ' Huttala', ground: '#a9b48c', small: ['house', 'shop', 'postoffice', 'tree', 'house', 'shop'],        big: ['school'],        bigP: .22 },
   { name: '60 Feet Road',     ground: '#b3ae9a', small: ['shop', 'grocery', 'house', 'shop', 'tree', 'grocery'],         big: ['mall', 'school'], bigP: .30 },
-  { name: 'Nag Para',          ground: '#9fb386', small: ['banyan', 'tree', 'tea', 'shop', 'house', 'temple'],            big: ['school'],        bigP: .10 },
-  { name: 'Jirat Bazar',          ground: '#97b27c', small: ['house', 'house', 'pond', 'tree', 'grocery', 'house'],          big: ['school'],        bigP: .12 },
+  { name: 'Jirat Bazar',          ground: '#9fb386', small: ['banyan', 'tree', 'tea', 'shop', 'house', 'temple'],            big: ['school'],        bigP: .10 },
+  { name: 'Nagpara',          ground: '#97b27c', small: ['house', 'house', 'pond', 'tree', 'grocery', 'house'],          big: ['school'],        bigP: .12 },
   { name: 'Das Para',         ground: '#a2b183', small: ['house', 'temple', 'house', 'tree', 'shop', 'house'],           big: ['school'],        bigP: .14 },
   { name: 'Neplar Math',      ground: '#8fb56e', small: ['tree', 'house', 'pond', 'field', 'tree', 'field'],             big: ['field', 'field', 'school'], bigP: .35 }
-
+   
 ];
+
 const areaAt = z => AREAS[mod(Math.floor(z / SEG_LEN), AREAS.length)];
 
 /* ===================== sound ===================== */
@@ -129,7 +131,7 @@ const SFX = {
   },
   async discover() {
     try {
-      try { if (await this.listRepo()) { this.finishDiscover(); return; } } catch (e) {}
+      try { if (await this.listRepo()) { this.funny.sort((a, b) => a.n - b.n); this.finishDiscover(); return; } } catch (e) {}
       for (const b of CONFIG.HORN_NAMES) { const u = await this.findAny(b); if (u) { this.hornUrl = u; break; } }
       for (const b of CONFIG.CRASH_NAMES) { const u = await this.findAny(b); if (u) { this.crashUrl = u; break; } }
       let pat = null;
@@ -145,6 +147,7 @@ const SFX = {
         }
       }
     } catch (e) {}
+    this.funny.sort((a, b) => a.n - b.n);
     this.finishDiscover();
   },
   finishDiscover() {
@@ -170,7 +173,13 @@ const SFX = {
     this.stopFunny();
     if (this.funny.length) {
       let pick;
-      do { pick = this.funny[(Math.random() * this.funny.length) | 0]; } while (this.funny.length > 1 && pick.n === this.lastFunny);
+      if (CONFIG.FUNNY_ORDER === 'random') {
+        do { pick = this.funny[(Math.random() * this.funny.length) | 0]; } while (this.funny.length > 1 && pick.n === this.lastFunny);
+      } else {
+        // serial: funny horn 1, 2, 3 ... then back to 1
+        this.funnyIdx = (this.funnyIdx || 0) % this.funny.length;
+        pick = this.funny[this.funnyIdx++];
+      }
       this.lastFunny = pick.n;
       this.funnyAudio = this.play(pick.url, CONFIG.VOL_FUNNY, CONFIG.LOOP_FUNNY);
       return 'Funny horn ' + pick.n;
