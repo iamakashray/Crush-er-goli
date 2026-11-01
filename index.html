@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1c1e24">
+<title>ক্রাশের গলি</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@500;700&family=Inter:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="game">
+  <canvas id="cv"></canvas>
+
+  <button class="ib glass" id="btnPause" style="left:calc(var(--u)*12)" aria-label="Pause">
+    <svg viewBox="0 0 24 24"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
+  </button>
+  <div id="gps" class="glass">
+    <div class="arrow"><svg viewBox="0 0 24 24"><path d="M12 2.5L4.6 20.2 12 16.8l7.4 3.4z"/></svg></div>
+    <div class="txt"><small>Now on</small><b id="roadName">Jirat Bazar</b></div>
+  </div>
+  <button class="ib glass" id="btnMute" style="right:calc(var(--u)*12)" aria-label="Sound on or off">
+    <svg viewBox="0 0 24 24"><path d="M4 9.5v5h3.6L12.5 19V5L7.6 9.5H4z"/><path class="w" d="M15.2 8.8a4.5 4.5 0 010 6.4M17.6 6.4a8 8 0 010 11.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path class="s" d="M15 9l6 6M21 9l-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+  </button>
+
+  <div class="stat glass l"><small>Score</small><b id="score">00000</b></div>
+  <div class="stat glass m"><small>Speed</small><b><span id="speed">0</span><i>km/h</i></b></div>
+  <div class="stat glass r"><small>Best</small><b id="best">00000</b></div>
+
+  <div id="toast"></div>
+  <div id="hint" class="glass">Hold &#9650; to drive</div>
+
+  <button class="cb glass rot-l" id="bL" aria-label="Steer left"><svg viewBox="0 0 24 24"><path d="M12 4l8 10h-5v6H9v-6H4z"/></svg></button>
+  <button class="cb glass rot-r" id="bR" aria-label="Steer right"><svg viewBox="0 0 24 24"><path d="M12 4l8 10h-5v6H9v-6H4z"/></svg></button>
+  <button class="cb glass go" id="bF" aria-label="Forward"><svg viewBox="0 0 24 24"><path d="M12 4l8 10h-5v6H9v-6H4z"/></svg></button>
+  <button class="cb glass stop rot-d" id="bB" aria-label="Backward"><svg viewBox="0 0 24 24"><path d="M12 4l8 10h-5v6H9v-6H4z"/></svg></button>
+  <button class="cb glass round horn" id="bH" aria-label="Horn">
+    <svg viewBox="0 0 24 24"><path d="M3 10v4h3.6L12 18.5v-13L6.6 10H3z"/><path d="M15.2 8.8a4.5 4.5 0 010 6.4M17.8 6.2a8 8 0 010 11.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    <span>Horn</span>
+  </button>
+  <button class="cb glass round fun" id="bFH" aria-label="Funny horn">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="10" r="1.5"/><circle cx="15" cy="10" r="1.5"/><path d="M7.4 13.8c1 3.2 8.2 3.2 9.2 0z"/></svg>
+    <span>Funny</span>
+  </button>
+
+  <!-- Start screen -->
+  <div class="screen" id="screenStart">
+    <svg class="heart" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+    <h1 class="title">ক্রাশের গলি</h1>
+    <p class="sub">Weave through the lanes of Jirat. Overtake the traffic and never crash.</p>
+    <button class="cta" id="btnStart">Start driving</button>
+    <div class="help glass">
+      <div><b>&#9650; &#9660;</b><span>Accelerate, brake and reverse</span></div>
+      <div><b>&#9664; &#9654;</b><span>Steer between the lanes</span></div>
+      <div><b>Horn</b><span>Beep at the traffic ahead</span></div>
+      <div><b>Funny</b><span>Plays a random funny horn</span></div>
+    </div>
+    <div class="kb">Keyboard: arrows or WASD, H horn, F funny horn, P pause</div>
+    <div class="hs">Best score<b id="startBest">00000</b></div>
+    <div id="dbg" class="hidden"></div>
+  </div>
+
+  <!-- Game over -->
+  <div class="screen hidden" id="screenOver">
+    <div class="card glass">
+      <div class="go">Game over</div>
+      <div class="where">Crashed on <b id="goRoad">Jirat Bazar</b></div>
+      <div class="lbl">Your score</div>
+      <div class="big" id="goScore">0</div>
+      <div class="badge hidden" id="goBadge">New high score!</div>
+      <div class="row"><span>High score</span><b id="goBest">0</b></div>
+      <button class="cta" id="btnAgain">Drive again</button>
+    </div>
+  </div>
+
+  <!-- Pause -->
+  <div class="screen hidden" id="screenPause">
+    <div class="go" style="color:#fff">Paused</div>
+    <button class="cta alt" id="btnResume">Resume</button>
+  </div>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>
